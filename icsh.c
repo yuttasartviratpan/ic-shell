@@ -286,6 +286,7 @@ int main() {
     char* prev_input[2];
     prev_input[0] = (char*) malloc(sizeof(char));
     prev_input[1] = (char*) malloc(sizeof(char));
+    printf("Starting IC shell\n");
     while (1) {
         printf("icsh $ ");
         fgets(buffer, 255, stdin);
