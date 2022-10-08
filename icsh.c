@@ -27,15 +27,16 @@ static const char * const command_name[] = {
 
 
 //TODO: write "string_process" such that it trims (ignores) all the space in the front (and the last if possible). //Done, but still skeptical of will it break
-// Try to also optimize the time complexity. 
+// Try to also optimize the time complexity.
 
 
 /* string_process()
- * Trims all the white characters that comes before the first char
- * Ex: ____echo hello -> echo hello
- *     ____echo hi__ -> echo hi__
+ * Input: input[] = the whole string from the input buffer.
+ *
+ * Functionality: Trims all the white characters that comes before the first char.
+ *      Ex: ____echo hello -> echo hello
+ *          ____echo hi__ -> echo hi__
  */
-
 char* string_process(char input[]){
     int actual_string_length = 0;
     int met_first_char = 0;
@@ -104,40 +105,87 @@ char* string_process(char input[]){
     }
 }
 
-//Mode: 0 = remember the prev command, 1 = !0
+
+
+/* command_executor()
+ * Input:
+ *      - command = the command part of the user inputted buffer.
+ *      - argument = the argument part of the user inputted buffer.
+ *      - prev_input[] = array of string, that stores previous command and argument.
+ *              prev_input[0] = previous command.
+ *              prev_input[1] = previous argument.
+ *      - mode = Determinant to update prev_input[], used in double-bang (!!)
+ *              0 = allowed updating of prev_input[], 1 otherwise.
+ *
+ * Functionality:
+ *      - Checks "command", whether the command matches any recorded known command (in enum above).
+ *      - If match recorded command, does the functionality it supposed to, otherwise output unknown command.
+ *      - If the command requires argument, then it uses the argument as well.
+ *
+ */
 void command_executor(char* command, char* argument, char* prev_input[], int mode){
     if(strcmp(command, command_name[ECHO]) == 0){
-        printf("This is echo\n");
         if(mode == 0){
             prev_input[0] = realloc(prev_input[0], strlen(command) * sizeof(char));
+            if (prev_input[0] == NULL){
+                printf("command memory allocation failed");
+                exit(1);
+            }
             strcpy(prev_input[0], command);
-            prev_input[1] = realloc(prev_input[1], strlen(argument) * sizeof(char));
-            strcpy(prev_input[1], argument);
+
+            if(argument[0] != '\0'){
+                prev_input[1] = realloc(prev_input[1], strlen(argument) * sizeof(char));
+                if (prev_input[1] == NULL){
+                    printf("arguments memory allocation failed");
+                    exit(1);
+                }
+                strcpy(prev_input[1], argument);
+            }
+            else{
+                strcpy(prev_input[1], argument);
+            }
         }
+        printf("%s\n", argument);
     }
     else if(strcmp(command, command_name[DOUBLE_BANG]) == 0){
-        printf("Double banged\n");
         if(*prev_input[0] == '\0'){
             return;
         }
+        printf("%s %s\n", prev_input[0], prev_input[1]);
         command_executor(prev_input[0], prev_input[1], NULL, 1);
     }
     else if(strcmp(command, command_name[EXIT]) == 0){
-        printf("Try to exit, but not now\n");
-        if(mode == 0){
-            prev_input[0] = realloc(prev_input[0], strlen(command) * sizeof(char));
-            strcpy(prev_input[0], command);
-            prev_input[1] = realloc(prev_input[1], strlen(argument) * sizeof(char));
-            strcpy(prev_input[1], argument);
+        int status = atoi(argument);
+        int truncation = status / 256;
+        if (truncation > 0 ){
+            status -= truncation * 256;
         }
+        printf("Good bye\n");
+        exit(status);
     }
     else{
-        printf("Don't know this command\n");
+        printf("Bad command\n");
     }
 }
 
-// Performance improvement suggestion: do space trimming while going through the string
-//  in command_process_unit. So you don't have to go through buffer twice.
+
+
+/* command_process_unit()
+ * Input:
+ *      - input = the whole string from the input buffer.
+ *      - prev_input[] = array of string, that stores previous command and argument.
+ *              prev_input[0] = previous command.
+ *              prev_input[1] = previous argument.
+ *
+ * Functionality:
+ *      - Trims the inputted string by calling string_process()
+ *      - Extracts the command string and argument(s) string from the inputted string buffer.
+ *      - It then runs command_executor(), passing in the extracted command, arguments and prev_input[] in.
+ *      - command_executor() ran in this way is set to mode = 0.
+ *      - If "input" is null-terminated after trimming the string, the whole function is returned.
+ *
+ *
+ */
 void command_process_unit(char input[], char* prev_input[]){
     char* trim_input = string_process(input);
     if (trim_input[0] == '\0'){
@@ -193,12 +241,27 @@ void command_process_unit(char input[], char* prev_input[]){
 
     if(argument_pos != 0){
         command = realloc(command, (command_pos + 1) * sizeof(char));
+        if (command == NULL){
+            printf("command memory allocation failed");
+            exit(1);
+        }
+
         arguments = realloc(arguments, (argument_pos + 1) * sizeof(char));
+        if (arguments == NULL){
+            printf("argument memory allocation failed");
+            exit(1);
+        }
+
         command[command_pos] = '\0';
         arguments[argument_pos] = '\0';
     }
     else{
         command = realloc(command, (command_pos + 1) * sizeof(char));
+        if (command == NULL){
+            printf("command memory allocation failed");
+            exit(1);
+        }
+
         command[command_pos] = '\0';
         arguments[0] = '\0';
     }
@@ -210,6 +273,14 @@ void command_process_unit(char input[], char* prev_input[]){
 
 }
 
+
+/* main()
+ * Just a placeholder where everything comes together, nothing exciting for now.
+ *
+ * prev_input[0] and prev_input[1] are malloc-ed with intent of remember the string after other
+ *      function(s) edit them.
+ *
+ */
 int main() {
     char buffer[MAX_CMD_BUFFER];
     char* prev_input[2];
