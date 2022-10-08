@@ -27,8 +27,7 @@ static const char * const command_name[] = {
 
 
 //TODO: write "string_process" such that it trims (ignores) all the space in the front (and the last if possible). //Done, but still skeptical of will it break
-// Do get_command & get_argument, taking a pointer of the processed string. Return command string and argument string
-// respectively. Try to also optimize the time complexity. 
+// Try to also optimize the time complexity. 
 
 
 /* string_process()
@@ -114,8 +113,6 @@ void command_executor(char* command, char* argument, char* prev_input[], int mod
             strcpy(prev_input[0], command);
             prev_input[1] = realloc(prev_input[1], strlen(argument) * sizeof(char));
             strcpy(prev_input[1], argument);
-            printf("prev_command = %s\n", prev_input[0]);
-            printf("prev_argument = %s\n", prev_input[1]);
         }
     }
     else if(strcmp(command, command_name[DOUBLE_BANG]) == 0){
@@ -123,8 +120,6 @@ void command_executor(char* command, char* argument, char* prev_input[], int mod
         if(*prev_input[0] == '\0'){
             return;
         }
-        printf("prev_command = %s\n", prev_input[0]);
-        printf("prev_argument = %s\n", prev_input[1]);
         command_executor(prev_input[0], prev_input[1], NULL, 1);
     }
     else if(strcmp(command, command_name[EXIT]) == 0){
@@ -134,14 +129,10 @@ void command_executor(char* command, char* argument, char* prev_input[], int mod
             strcpy(prev_input[0], command);
             prev_input[1] = realloc(prev_input[1], strlen(argument) * sizeof(char));
             strcpy(prev_input[1], argument);
-            printf("prev_command = %s\n", prev_input[0]);
-            printf("prev_argument = %s\n", prev_input[1]);
         }
     }
     else{
         printf("Don't know this command\n");
-        printf("prev_command = %s\n", prev_input[0]);
-        printf("prev_argument = %s\n", prev_input[1]);
     }
 }
 
@@ -169,7 +160,6 @@ void command_process_unit(char input[], char* prev_input[]){
             mode = 1;
             found_first_space = 1;
             pos++;
-//            printf("command_pos = %d\n", command_pos);
             continue;
         }
 
@@ -195,9 +185,6 @@ void command_process_unit(char input[], char* prev_input[]){
                     exit(1);
                 }
             }
-//            printf("pos = %d\n", pos);
-//            printf("pos - command_pos + 1 = %d\n", pos-(command_pos+1));
-//            printf("argument pos = %d\n", argument_pos);
             arguments[argument_pos] = trim_input[pos];
             pos++;
             argument_pos++;
@@ -216,10 +203,6 @@ void command_process_unit(char input[], char* prev_input[]){
         arguments[0] = '\0';
     }
 
-//    printf("This is command_pos = %d\n", command_pos);
-//    printf("This is argument_pos = %d\n", argument_pos);
-//    printf("This is command_length = %d\n", command_length);
-//    printf("This is argument_length = %d\n", argument_length);
     command_executor(command, arguments,  prev_input, 0);
     free(command);
     free(arguments);
@@ -235,17 +218,6 @@ int main() {
     while (1) {
         printf("icsh $ ");
         fgets(buffer, 255, stdin);
-        //char* command_ptr = get_command(buffer);
-        //char* argument_ptr = get_arguments(buffer);
-        //printf("%s\n", argument_ptr);
-        //free(command_ptr);
-
-//        char* string = string_process(buffer);
-//        if(string[0] != '\0'){
-//            printf("%s\n", string);
-//        }
-//        free(string);
-
         command_process_unit(buffer, prev_input);
     }
     free(prev_input[0]);
