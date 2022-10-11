@@ -18,12 +18,14 @@
 enum command{
     ECHO=0,
     DOUBLE_BANG,
+    LS,
     EXIT,
 };
 
 static const char * const command_name[] = {
         [ECHO] = "echo",
         [DOUBLE_BANG] = "!!",
+        [LS] = "ls",
         [EXIT] = "exit",
 };
 
@@ -143,6 +145,7 @@ char* string_process(char input[]){
  *      - Nothing, it's void
  */
 void command_executor(char* command, char* argument, char* prev_input[], char* oristr, FILE* fileptr, int mode){
+
     if(strcmp(command, command_name[ECHO]) == 0){
         if(mode == 0){
             prev_input[0] = realloc(prev_input[0], strlen(command) * sizeof(char));
@@ -166,13 +169,21 @@ void command_executor(char* command, char* argument, char* prev_input[], char* o
         }
         printf("%s\n", argument);
     }
+
     else if(strcmp(command, command_name[DOUBLE_BANG]) == 0){
         if(*prev_input[0] == '\0'){ // If there is no command, just skip.
             return;
         }
-        printf("%s %s\n", prev_input[0], prev_input[1]);
+        printf("%s %s %s\n", prev_input[0], prev_input[1], argument);
+        if(strlen(argument) != 0){
+            prev_input[1] = realloc( prev_input[1], (strlen(prev_input[1]) + strlen(argument) + 1) * sizeof(char));
+            strcat(prev_input[1], " ");
+            strcat(prev_input[1], argument);
+        }
         command_executor(prev_input[0], prev_input[1], NULL, oristr, fileptr, 1);
     }
+
+
     else if(strcmp(command, command_name[EXIT]) == 0){
         int status = atoi(argument);
         int truncation = status / 256;
@@ -190,8 +201,65 @@ void command_executor(char* command, char* argument, char* prev_input[], char* o
         }
         exit(status);
     }
+
     else{
-        printf("Bad command\n");
+        int status;
+
+        char** argument_list = (char**) malloc(sizeof(char*));
+
+        char* command_file_path = (char*) malloc((10 + strlen(command))*sizeof(char));
+        strcat(command_file_path, "/usr/bin/");
+        strcat(command_file_path, command);
+        strcat(command_file_path, "\0");
+        argument_list[0] = command_file_path;
+
+        int argument_pos = 1;
+
+        if(strcmp(argument, "\0") != 0){
+            argument_list = realloc(argument_list, 2*sizeof(char*));
+            char* each_argument = strtok(argument, " ");
+            char* first_argument = (char*) malloc(strlen(each_argument) * sizeof(char));
+            strcpy(first_argument, each_argument);
+            argument_list[argument_pos] = first_argument;
+            argument_pos++;
+            each_argument = strtok(NULL, " ");
+
+
+            while(each_argument != NULL){
+                char* next_argument = (char*) malloc(strlen(each_argument) * sizeof(char));
+                argument_list = realloc(argument_list, (argument_pos+1) * sizeof(char*));
+                strcpy(next_argument, each_argument);
+                argument_list[argument_pos] = next_argument;
+                argument_pos++;
+                each_argument = strtok(NULL, " ");
+            }
+        }
+        else{
+            argument_pos = -1;
+        }
+
+        pid_t pid = fork();
+
+        if (pid < 0){
+            printf("fork() failed\n");
+            exit(1);
+        }
+        else if (pid == 0){
+            // child process
+
+            if(execvp(argument_list[0], argument_list) < 0){
+                printf("Bad Command\n");
+            }
+            free(command_file_path);
+            for(int i = 0; i <= argument_pos-1 && argument_pos >= 0; i++){
+                free(argument_list[i]);
+            }
+            free(argument_list);
+        }
+        else{
+            waitpid(pid, NULL, 0);
+        }
+
     }
 }
 
