@@ -137,7 +137,9 @@ char* string_process(char input[]){
  *
  * Functionality:
  *      - Checks "command", whether the command matches any recorded known command (in enum above).
- *      - If match recorded command, does the functionality it supposed to, otherwise output unknown command.
+ *      - If match recorded command, does the functionality it supposed to.
+ *      - If doesn't match any build-in command, check with /usr/bin/ for inputted functionality.
+ *              - If not found, output "Bad command".
  *      - If the command requires argument, then it uses the argument as well.
  *      - If exit ever reaches, free all the malloc-ed pointers.
  *
@@ -203,40 +205,30 @@ void command_executor(char* command, char* argument, char* prev_input[], char* o
     }
 
     else{
-        int status;
-
-        char** argument_list = (char**) malloc(sizeof(char*));
-
-        char* command_file_path = (char*) malloc((10 + strlen(command))*sizeof(char));
-        strcat(command_file_path, "/usr/bin/");
-        strcat(command_file_path, command);
-        strcat(command_file_path, "\0");
-        argument_list[0] = command_file_path;
-
-        int argument_pos = 1;
-
-        if(strcmp(argument, "\0") != 0){
-            argument_list = realloc(argument_list, 2*sizeof(char*));
-            char* each_argument = strtok(argument, " ");
-            char* first_argument = (char*) malloc(strlen(each_argument) * sizeof(char));
-            strcpy(first_argument, each_argument);
-            argument_list[argument_pos] = first_argument;
-            argument_pos++;
-            each_argument = strtok(NULL, " ");
-
-
-            while(each_argument != NULL){
-                char* next_argument = (char*) malloc(strlen(each_argument) * sizeof(char));
-                argument_list = realloc(argument_list, (argument_pos+1) * sizeof(char*));
-                strcpy(next_argument, each_argument);
-                argument_list[argument_pos] = next_argument;
-                argument_pos++;
-                each_argument = strtok(NULL, " ");
+        int count = 0;
+        char actual_string[strlen(argument)];
+        strcpy(actual_string, argument);
+        char* string = strtok(argument, " ");
+        if (string != NULL){
+            while (string != NULL){
+                count++;
+                string = strtok(NULL, " ");
             }
         }
-        else{
-            argument_pos = -1;
+
+        char* arguments[count + 2];
+        string = strtok(actual_string, " ");
+        for(int i = 0; i < count + 1; i++){
+            if(i == 0){
+                arguments[i] = command;
+            }
+            else{
+                arguments[i] = string;
+                string = strtok(NULL, " ");
+            }
         }
+
+        arguments[count + 1] = NULL;
 
         pid_t pid = fork();
 
@@ -246,15 +238,11 @@ void command_executor(char* command, char* argument, char* prev_input[], char* o
         }
         else if (pid == 0){
             // child process
-
-            if(execvp(argument_list[0], argument_list) < 0){
+            if(execvp(arguments[0], arguments) < 0){
                 printf("Bad Command\n");
+                exit(0);
             }
-            free(command_file_path);
-            for(int i = 0; i <= argument_pos-1 && argument_pos >= 0; i++){
-                free(argument_list[i]);
-            }
-            free(argument_list);
+
         }
         else{
             waitpid(pid, NULL, 0);
