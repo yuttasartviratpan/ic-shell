@@ -52,6 +52,7 @@ void child_signal_handler(int sig, siginfo_t *sip, void *notused){
 }
 
 
+
 /* string_process()
  * Input: input[] = The whole string from the input buffer.
  *
@@ -506,30 +507,6 @@ void command_process_unit(char input[], char* prev_input[], FILE* fileptr){
 
 
 
-/*
-int main(){
-    struct sigaction action;
-    action.sa_sigaction = ChildHandler;
-    sigfillset (&action.sa_mask);
-    action.sa_flags = SA_SIGINFO;
-    sigaction (SIGCHLD, &action, NULL);
-    //sigaction (SIGINT, &action, NULL);
-
-    pid_t pid = fork();
-
-    while (1){
-        if (pid == 0){
-            // child process
-            printf("I am a child\n");
-            exit(0);
-        }
-        printf ("PID: %d\n", getpid());
-        sleep(1);
-    }
-
-}
-*/
-
 /* main()
  * Input:
  *      - argc (aka. Argument Count) = Counting the number of arguments when executing program on the terminal
@@ -556,9 +533,6 @@ int main(){
  *
  *
  */
-
-
-
 int main(int argc, char* argv[]) {
     char buffer[MAX_CMD_BUFFER];
     char *prev_input[2];
