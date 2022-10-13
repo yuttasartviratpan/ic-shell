@@ -4,11 +4,14 @@
  */
 
 #include <sys/wait.h>
+#include <sys/types.h>
 #include "stdio.h"
 #include "string.h"
 #include "stdlib.h"
 #include "ctype.h"
 #include "unistd.h"
+#include "fcntl.h"
+
 #define MAX_CMD_BUFFER 255
 
 /*
@@ -161,7 +164,7 @@ char* string_process(char input[]){
  * Return/Output:
  *      - Nothing, it's void
  */
-void command_executor(char *command, char *argument, char *prev_input[], char *oristr, FILE *fileptr, int* prev_status, int mode) {
+void command_executor(char *command, char *argument, char *prev_input[], char *oristr, FILE *fileptr, int mode) {
 
     if(strcmp(command, command_name[ECHO]) == 0 && strcmp(argument, "$?") == 0){
         if(mode == 0){
@@ -172,11 +175,11 @@ void command_executor(char *command, char *argument, char *prev_input[], char *o
             }
             strcpy(prev_input[0], command);
             strcpy(prev_input[1], argument);
-            printf("%d\n", *prev_status);
-            *prev_status = 0;
+            printf("%d\n", prev_status);
+            prev_status = 0;
         }
         else{
-            printf("%d\n", *prev_status);
+            printf("%d\n", prev_status);
         }
     }
 
@@ -206,7 +209,7 @@ void command_executor(char *command, char *argument, char *prev_input[], char *o
         else{
             printf("%s\n", argument);
         }
-        *prev_status = 0;
+        prev_status = 0;
     }
 
     else if(strcmp(command, command_name[DOUBLE_BANG]) == 0){
@@ -219,8 +222,8 @@ void command_executor(char *command, char *argument, char *prev_input[], char *o
             strcat(prev_input[1], " ");
             strcat(prev_input[1], argument);
         }
-        command_executor(prev_input[0], prev_input[1], NULL, oristr, fileptr, prev_status, 1);
-        *prev_status = 0;
+        command_executor(prev_input[0], prev_input[1], NULL, oristr, fileptr, 1);
+        prev_status = 0;
     }
 
     else if(strcmp(command, command_name[EXIT]) == 0){
@@ -238,7 +241,7 @@ void command_executor(char *command, char *argument, char *prev_input[], char *o
         if(fileptr != NULL){
             fclose(fileptr);
         }
-        *prev_status = 0;
+        prev_status = 0;
         exit(status);
     }
 
@@ -282,7 +285,7 @@ void command_executor(char *command, char *argument, char *prev_input[], char *o
 
         }
         else{
-            waitpid(pid, prev_status, 0);
+            waitpid(pid, &prev_status, 0);
         }
 
     }
@@ -310,82 +313,195 @@ void command_executor(char *command, char *argument, char *prev_input[], char *o
  * Return/Output:
  *      - Nothing, it's void
  */
-void command_process_unit(char input[], char* prev_input[], FILE* fileptr, int* prev_status){
+void command_process_unit(char input[], char* prev_input[], FILE* fileptr){
     char* trim_input = string_process(input);
     if (trim_input[0] == '\0'){
         free(trim_input);
         return;
     }
-    char* command = (char*) malloc(sizeof(char));
-    char* arguments = (char*) malloc(sizeof(char));
-    int command_length = 1;
-    int argument_length = 1;
-    int command_pos = 0;
-    int argument_pos = 0;
-    int pos = 0;
-    int mode = 0; // 0 = command fetching, 1 = argument fetching
-    int found_first_space = 0;
-    while(trim_input[pos] != '\0'){
-        if(trim_input[pos] == ' ' && !found_first_space){
-            mode = 1;
-            found_first_space = 1;
-            pos++;
-            continue;
+
+    char* string = (char*) malloc(strlen(trim_input) * sizeof(char));
+    strcpy(string, trim_input);
+    char* string_tok = strtok(string, " ");
+    int has_io_direction_out = 0;
+    int has_io_direction_in = 0;
+    while(string_tok != NULL){
+        if(strcmp(string_tok, ">") == 0 ){
+            has_io_direction_out = 1;
+            break;
         }
-        if(!mode){ // mode == 0
-            if(pos == command_length){
-                command_length = command_length * 2;
-                command = realloc(command, command_length * sizeof(char));
-                if (command == NULL){ //In case it failed
-                    printf("command memory allocation failed");
+        else if(strcmp(string_tok, "<") == 0){
+            has_io_direction_in = 1;
+            break;
+        }
+        string_tok = strtok(NULL, " ");
+    }
+
+    if(has_io_direction_out){
+        char** command_argument = (char**) malloc(2 * sizeof(char*));
+        strcpy(string, trim_input);
+        string_tok = strtok(string, " ");
+        command_argument[0] = (char*) malloc(strlen(string_tok) * sizeof(char ));
+        strcpy(command_argument[0], string_tok);
+
+        command_argument[1] = (char*) malloc(strlen(string_tok) * sizeof(char ));
+        string_tok = strtok(NULL, " ");
+        while(strcmp(string_tok, ">") != 0){
+            command_argument[1] = strcat(command_argument[1], string_tok);
+            string_tok = strtok(NULL, " ");
+        }
+
+        string_tok = strtok(NULL, " ");
+        char* filename = (char*) malloc(strlen(string_tok) * sizeof(char));
+        strcpy(filename, string_tok);
+
+        int open_file = open_file = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+
+        if(open_file < 0){
+            printf("File openning failed\n");
+            exit(1);
+        }
+
+        int saved_stdout = dup(1);
+
+        dup2(open_file, STDOUT_FILENO);
+        command_executor(command_argument[0], command_argument[1], prev_input, trim_input, fileptr, 0);
+        free(command_argument[0]);
+        free(command_argument[1]);
+        free(command_argument);
+        free(trim_input);
+        free(string);
+        free(filename);
+
+        dup2(saved_stdout, STDOUT_FILENO);
+
+        close(open_file);
+    }
+    else if(has_io_direction_in){
+        int status;
+        pid_t pid = fork();
+
+        if(pid < 0){
+            printf("fork failed\n");
+            exit(1);
+        }
+        else if(pid == 0){
+            strcpy(string, trim_input);
+            string_tok = strtok(string, " ");
+            char* filename;
+
+            if(strcmp(string_tok, "<") == 0){
+                string_tok = strtok(NULL, " ");
+                filename = string_tok;
+                if (filename == NULL){
+                    printf("No file inputted\n");
                     exit(1);
                 }
             }
-            command[command_pos] = trim_input[pos];
-            pos++;
-            command_pos++;
+            else if(strcmp(string_tok, "<") != 0){ //Ignore what ever is before <
+                while(strcmp(string_tok, "<") != 0){
+                    string_tok = strtok(NULL, " ");
+                }
+                string_tok = strtok(NULL, " ");
+                filename = string_tok;
+                if (filename == NULL){
+                    printf("No file inputted\n");
+                    exit(1);
+                }
+            }
+
+            FILE* open_file = fopen(filename, "r");
+            if(open_file == NULL){
+                printf("File not found\n");
+                exit(1);
+            }
+
+            char buffer[255];
+            while (fgets(buffer, MAX_CMD_BUFFER, open_file)) {
+                command_process_unit(buffer, prev_input, open_file);
+            }
+            free(trim_input);
+            free(string);
+            exit(0);
         }
         else{
-            if(pos-(command_pos+1) == argument_length){
-                argument_length = argument_length * 2;
-                arguments = realloc(arguments, argument_length * sizeof(char));
-                if (arguments == NULL){ //In case it failed
-                    printf("arguments memory allocation failed");
-                    exit(1);
-                }
-            }
-            arguments[argument_pos] = trim_input[pos];
-            pos++;
-            argument_pos++;
+            wait(&status);
         }
-    }
-    if(argument_pos != 0){
-        command = realloc(command, (command_pos + 1) * sizeof(char));
-        if (command == NULL){
-            printf("command memory allocation failed");
-            exit(1);
-        }
-        arguments = realloc(arguments, (argument_pos + 1) * sizeof(char));
-        if (arguments == NULL){
-            printf("argument memory allocation failed");
-            exit(1);
-        }
-        command[command_pos] = '\0';
-        arguments[argument_pos] = '\0';
+
+
     }
     else{
-        command = realloc(command, (command_pos + 1) * sizeof(char));
-        if (command == NULL){
-            printf("command memory allocation failed");
-            exit(1);
+        char* command = (char*) malloc(sizeof(char));
+        char* arguments = (char*) malloc(sizeof(char));
+        int command_length = 1;
+        int argument_length = 1;
+        int command_pos = 0;
+        int argument_pos = 0;
+        int pos = 0;
+        int mode = 0; // 0 = command fetching, 1 = argument fetching
+        int found_first_space = 0;
+        while(trim_input[pos] != '\0'){
+            if(trim_input[pos] == ' ' && !found_first_space){
+                mode = 1;
+                found_first_space = 1;
+                pos++;
+                continue;
+            }
+            if(!mode){ // mode == 0
+                if(pos == command_length){
+                    command_length = command_length * 2;
+                    command = realloc(command, command_length * sizeof(char));
+                    if (command == NULL){ //In case it failed
+                        printf("command memory allocation failed");
+                        exit(1);
+                    }
+                }
+                command[command_pos] = trim_input[pos];
+                pos++;
+                command_pos++;
+            }
+            else{
+                if(pos-(command_pos+1) == argument_length){
+                    argument_length = argument_length * 2;
+                    arguments = realloc(arguments, argument_length * sizeof(char));
+                    if (arguments == NULL){ //In case it failed
+                        printf("arguments memory allocation failed");
+                        exit(1);
+                    }
+                }
+                arguments[argument_pos] = trim_input[pos];
+                pos++;
+                argument_pos++;
+            }
         }
-        command[command_pos] = '\0';
-        arguments[0] = '\0';
+        if(argument_pos != 0){
+            command = realloc(command, (command_pos + 1) * sizeof(char));
+            if (command == NULL){
+                printf("command memory allocation failed");
+                exit(1);
+            }
+            arguments = realloc(arguments, (argument_pos + 1) * sizeof(char));
+            if (arguments == NULL){
+                printf("argument memory allocation failed");
+                exit(1);
+            }
+            command[command_pos] = '\0';
+            arguments[argument_pos] = '\0';
+        }
+        else{
+            command = realloc(command, (command_pos + 1) * sizeof(char));
+            if (command == NULL){
+                printf("command memory allocation failed");
+                exit(1);
+            }
+            command[command_pos] = '\0';
+            arguments[0] = '\0';
+        }
+        command_executor(command, arguments, prev_input, trim_input, fileptr, 0);
+        free(command);
+        free(arguments);
+        free(trim_input);
     }
-    command_executor(command, arguments, prev_input, trim_input, fileptr, prev_status, 0);
-    free(command);
-    free(arguments);
-    free(trim_input);
 }
 
 
@@ -476,7 +592,7 @@ int main(int argc, char* argv[]) {
                 exit(1);
             }
             while (fgets(buffer, MAX_CMD_BUFFER, fptr)) {
-                command_process_unit(buffer, prev_input, fptr, &prev_status);
+                command_process_unit(buffer, prev_input, fptr);
             }
         } else {
             wait(&status);
@@ -489,7 +605,7 @@ int main(int argc, char* argv[]) {
     while (1) {
         printf("icsh $ ");
         fgets(buffer, 255, stdin);
-        command_process_unit(buffer, prev_input, NULL, &prev_status);
+        command_process_unit(buffer, prev_input, NULL);
         memset(buffer, 0, 255);
     }
 
