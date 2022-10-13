@@ -18,20 +18,35 @@
 enum command{
     ECHO=0,
     DOUBLE_BANG,
-    LS,
     EXIT,
 };
 
 static const char * const command_name[] = {
         [ECHO] = "echo",
         [DOUBLE_BANG] = "!!",
-        [LS] = "ls",
         [EXIT] = "exit",
 };
 
+int prev_status = 0;
 
-//TODO: write "string_process" such that it trims (ignores) all the space in the front (and the last if possible). //Done, but still skeptical of will it break
-// Try to also optimize the time complexity.
+void child_signal_handler(int sig, siginfo_t *sip, void *notused){
+    if(sig == SIGINT || sig == SIGTSTP){
+        write(STDIN_FILENO, "\n", 1);
+    }
+    else if(sig == SIGCHLD){
+        int status;
+        fflush (stdout);
+        status = 0;
+
+        if (sip->si_pid == waitpid (sip->si_pid, &status, WNOHANG)){
+
+            if (WIFEXITED(status)|| WTERMSIG(status) || WIFSTOPPED(status)) {
+                prev_status = status;
+            }
+        }
+    }
+
+}
 
 
 /* string_process()
@@ -146,9 +161,26 @@ char* string_process(char input[]){
  * Return/Output:
  *      - Nothing, it's void
  */
-void command_executor(char* command, char* argument, char* prev_input[], char* oristr, FILE* fileptr, int mode){
+void command_executor(char *command, char *argument, char *prev_input[], char *oristr, FILE *fileptr, int* prev_status, int mode) {
 
-    if(strcmp(command, command_name[ECHO]) == 0){
+    if(strcmp(command, command_name[ECHO]) == 0 && strcmp(argument, "$?") == 0){
+        if(mode == 0){
+            prev_input[0] = realloc(prev_input[0], strlen(command) * sizeof(char));
+            if (prev_input[0] == NULL){
+                printf("command memory allocation failed");
+                exit(1);
+            }
+            strcpy(prev_input[0], command);
+            strcpy(prev_input[1], argument);
+            printf("%d\n", *prev_status);
+            *prev_status = 0;
+        }
+        else{
+            printf("%d\n", *prev_status);
+        }
+    }
+
+    else if(strcmp(command, command_name[ECHO]) == 0){
         if(mode == 0){
             prev_input[0] = realloc(prev_input[0], strlen(command) * sizeof(char));
             if (prev_input[0] == NULL){
@@ -164,12 +196,17 @@ void command_executor(char* command, char* argument, char* prev_input[], char* o
                     exit(1);
                 }
                 strcpy(prev_input[1], argument);
+                printf("%s\n", argument);
             }
             else{
                 strcpy(prev_input[1], argument);
+                printf("%s\n", argument);
             }
         }
-        printf("%s\n", argument);
+        else{
+            printf("%s\n", argument);
+        }
+        *prev_status = 0;
     }
 
     else if(strcmp(command, command_name[DOUBLE_BANG]) == 0){
@@ -182,9 +219,9 @@ void command_executor(char* command, char* argument, char* prev_input[], char* o
             strcat(prev_input[1], " ");
             strcat(prev_input[1], argument);
         }
-        command_executor(prev_input[0], prev_input[1], NULL, oristr, fileptr, 1);
+        command_executor(prev_input[0], prev_input[1], NULL, oristr, fileptr, prev_status, 1);
+        *prev_status = 0;
     }
-
 
     else if(strcmp(command, command_name[EXIT]) == 0){
         int status = atoi(argument);
@@ -201,6 +238,7 @@ void command_executor(char* command, char* argument, char* prev_input[], char* o
         if(fileptr != NULL){
             fclose(fileptr);
         }
+        *prev_status = 0;
         exit(status);
     }
 
@@ -231,7 +269,6 @@ void command_executor(char* command, char* argument, char* prev_input[], char* o
         arguments[count + 1] = NULL;
 
         pid_t pid = fork();
-
         if (pid < 0){
             printf("fork() failed\n");
             exit(1);
@@ -245,7 +282,7 @@ void command_executor(char* command, char* argument, char* prev_input[], char* o
 
         }
         else{
-            waitpid(pid, NULL, 0);
+            waitpid(pid, prev_status, 0);
         }
 
     }
@@ -273,13 +310,12 @@ void command_executor(char* command, char* argument, char* prev_input[], char* o
  * Return/Output:
  *      - Nothing, it's void
  */
-void command_process_unit(char input[], char* prev_input[], FILE* fileptr){
+void command_process_unit(char input[], char* prev_input[], FILE* fileptr, int* prev_status){
     char* trim_input = string_process(input);
     if (trim_input[0] == '\0'){
         free(trim_input);
         return;
     }
-
     char* command = (char*) malloc(sizeof(char));
     char* arguments = (char*) malloc(sizeof(char));
     int command_length = 1;
@@ -289,7 +325,6 @@ void command_process_unit(char input[], char* prev_input[], FILE* fileptr){
     int pos = 0;
     int mode = 0; // 0 = command fetching, 1 = argument fetching
     int found_first_space = 0;
-
     while(trim_input[pos] != '\0'){
         if(trim_input[pos] == ' ' && !found_first_space){
             mode = 1;
@@ -297,7 +332,6 @@ void command_process_unit(char input[], char* prev_input[], FILE* fileptr){
             pos++;
             continue;
         }
-
         if(!mode){ // mode == 0
             if(pos == command_length){
                 command_length = command_length * 2;
@@ -325,14 +359,12 @@ void command_process_unit(char input[], char* prev_input[], FILE* fileptr){
             argument_pos++;
         }
     }
-
     if(argument_pos != 0){
         command = realloc(command, (command_pos + 1) * sizeof(char));
         if (command == NULL){
             printf("command memory allocation failed");
             exit(1);
         }
-
         arguments = realloc(arguments, (argument_pos + 1) * sizeof(char));
         if (arguments == NULL){
             printf("argument memory allocation failed");
@@ -350,15 +382,37 @@ void command_process_unit(char input[], char* prev_input[], FILE* fileptr){
         command[command_pos] = '\0';
         arguments[0] = '\0';
     }
-
-    command_executor(command, arguments,  prev_input, trim_input, fileptr, 0);
+    command_executor(command, arguments, prev_input, trim_input, fileptr, prev_status, 0);
     free(command);
     free(arguments);
     free(trim_input);
-
 }
 
 
+
+/*
+int main(){
+    struct sigaction action;
+    action.sa_sigaction = ChildHandler;
+    sigfillset (&action.sa_mask);
+    action.sa_flags = SA_SIGINFO;
+    sigaction (SIGCHLD, &action, NULL);
+    //sigaction (SIGINT, &action, NULL);
+
+    pid_t pid = fork();
+
+    while (1){
+        if (pid == 0){
+            // child process
+            printf("I am a child\n");
+            exit(0);
+        }
+        printf ("PID: %d\n", getpid());
+        sleep(1);
+    }
+
+}
+*/
 
 /* main()
  * Input:
@@ -386,36 +440,47 @@ void command_process_unit(char input[], char* prev_input[], FILE* fileptr){
  *
  *
  */
+
+
+
 int main(int argc, char* argv[]) {
     char buffer[MAX_CMD_BUFFER];
-    char* prev_input[2];
-    prev_input[0] = (char*) malloc(sizeof(char));
-    prev_input[1] = (char*) malloc(sizeof(char));
+    char *prev_input[2];
+    prev_input[0] = (char *) malloc(sizeof(char));
+    prev_input[1] = (char *) malloc(sizeof(char));
+
+    struct sigaction action;
+    action.sa_sigaction = child_signal_handler;
+    sigfillset (&action.sa_mask);
+    action.sa_flags = SA_SIGINFO;
+
+    sigaction (SIGINT, &action, NULL);
+    sigaction (SIGTSTP, &action, NULL);
+    sigaction (SIGCHLD, &action, NULL);
+
     printf("Starting IC shell\n");
-    if (argc == 2){
+    if (argc == 2) {
         int status;
         pid_t pid = fork();
 
-        if (pid < 0){
+        if (pid < 0) {
             printf("fork() failed\n");
-        }
-        else if (pid == 0){
+        } else if (pid == 0) {
             // child process
             FILE *fptr;
             char file_name[3] = {'.', '/', '\0'};
             strcat(file_name, argv[1]);
-            fptr = fopen(file_name,"r");
-            if(fptr == NULL){
+            fptr = fopen(file_name, "r");
+            if (fptr == NULL) {
                 printf("File not found\n");
                 exit(1);
             }
-            while(fgets(buffer, MAX_CMD_BUFFER, fptr)) {
-                command_process_unit(buffer, prev_input, fptr);
+            while (fgets(buffer, MAX_CMD_BUFFER, fptr)) {
+                command_process_unit(buffer, prev_input, fptr, &prev_status);
             }
-        }
-        else{
+        } else {
             wait(&status);
-            if(WIFEXITED(status))
+            if (WIFEXITED(status))
                 printf("Child's exit code is: %d\n", WEXITSTATUS(status));
             else
                 printf("Child did not terminate with exit\n");
@@ -424,9 +489,9 @@ int main(int argc, char* argv[]) {
     while (1) {
         printf("icsh $ ");
         fgets(buffer, 255, stdin);
-        command_process_unit(buffer, prev_input, NULL);
+        command_process_unit(buffer, prev_input, NULL, &prev_status);
+        memset(buffer, 0, 255);
     }
 
     return 0;
 }
-
